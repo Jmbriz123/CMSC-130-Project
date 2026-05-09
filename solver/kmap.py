@@ -41,6 +41,8 @@ KMAP_LAYOUT = {
 }
 
 
+
+
 def get_layout(num_vars: int) -> dict:
     """Return the K-Map layout spec for the given variable count."""
     if num_vars not in KMAP_LAYOUT:

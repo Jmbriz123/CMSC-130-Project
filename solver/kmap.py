@@ -1,5 +1,4 @@
 """
-kmap.py
 -------
 K-Map grid layout, Gray-code ordering, and valid grouping generation.
 
@@ -63,15 +62,15 @@ def build_grid(minterms: list[int], num_vars: int) -> list[list[int]]:
         grid[row][col] = 0 or 1
     """
     layout = get_layout(num_vars)
-    rows = layout["rows"]
+    rows = layout["rows"] # e.g. [0, 1, 3, 2] for 4-var
     cols = layout["cols"]
 
     row_bits = len(layout["row_vars"])
-    col_bits = len(layout["col_vars"])
+    col_bits = len(layout["col_vars"]) 
 
     minterm_set = set(minterms)
     grid = []
-
+    #build grid 
     for r in rows:
         row_data = []
         for c in cols:
@@ -88,6 +87,8 @@ def minterm_to_cell(minterm: int, num_vars: int) -> tuple[int, int]:
     Return the (row_idx, col_idx) position in the K-Map grid for a given minterm.
     These are grid indices (0-based), not Gray-code values.
     """
+
+
     layout = get_layout(num_vars)
     rows = layout["rows"]
     cols = layout["cols"]

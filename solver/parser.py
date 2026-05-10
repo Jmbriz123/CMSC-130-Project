@@ -1,5 +1,4 @@
 """
-parser.py
 ---------
 Handles all input parsing for the K-Map solver.
 Accepts:

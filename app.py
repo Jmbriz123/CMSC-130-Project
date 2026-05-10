@@ -1,4 +1,219 @@
-def main():
-    ...
+"""
+K-Map Solver & Boolean Simplifier — Streamlit entry point.
+
+Run with:
+    streamlit run app.py
+"""
+
+import streamlit as st
+from solver.parser import parse_minterms, parse_truth_table, parse_csv_upload
+from solver.kmap import build_grid
+from solver.implicants import find_prime_implicants, select_essential_implicants
+from solver.expression import build_sop, build_pos, build_verilog
+from ui.grid import render_kmap
+from ui.components import (
+    render_sop_display,
+    render_pos_display,
+    render_verilog_display,
+    render_trace,
+    render_truth_table,
+)
 
 
+# ---------------------------------------------------------------------------
+# Page config
+# ---------------------------------------------------------------------------
+
+st.set_page_config(
+    page_title="K-Map Solver",
+    page_icon="🗺️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Catppuccin Mocha-inspired dark theme injection
+st.markdown(
+    """
+    <style>
+    .stApp { background-color: #1E1E2E; color: #CDD6F4; }
+    .stSidebar { background-color: #181825; }
+    .stButton>button {
+        background-color: #89B4FA; color: #1E1E2E;
+        border: none; border-radius: 8px;
+        font-weight: 700; padding: 0.5rem 1.5rem;
+    }
+    .stButton>button:hover { background-color: #74C7EC; }
+    .stTextInput>div>input, .stTextArea>div>textarea {
+        background-color: #313244; color: #CDD6F4;
+        border: 1px solid #585B70; border-radius: 8px;
+    }
+    .stSelectbox>div>div { background-color: #313244; color: #CDD6F4; }
+    h1, h2, h3 { color: #CDD6F4; }
+    .stTabs [data-baseweb="tab"] { color: #A6ADC8; }
+    .stTabs [aria-selected="true"] { color: #89B4FA !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ---------------------------------------------------------------------------
+# Sidebar — Input
+# ---------------------------------------------------------------------------
+
+with st.sidebar:
+    st.markdown("## 🗺️ K-Map Solver")
+    st.markdown("*Boolean logic simplifier*")
+    st.divider()
+
+    input_mode = st.selectbox(
+        "Input Method",
+        ["Minterm Notation", "Truth Table (Manual)", "CSV Upload"],
+        help="Choose how to provide your Boolean function.",
+    )
+
+    minterms, num_vars = None, None
+    parse_error = None
+
+    # ------ Minterm Notation ------
+    if input_mode == "Minterm Notation":
+        st.markdown("**Enter minterms**")
+        st.caption("Formats: `Σm(0,1,3,7)` · `m(0,1,3,7)` · `0,1,3,7`")
+        minterm_input = st.text_input(
+            "Minterms", placeholder="e.g. m(0,1,3,7)", label_visibility="collapsed"
+        )
+        if minterm_input.strip():
+            try:
+                minterms, num_vars = parse_minterms(minterm_input)
+                st.success(f"✓ {len(minterms)} minterms · {num_vars} variables")
+            except ValueError as e:
+                parse_error = str(e)
+
+    # ------ Truth Table (Manual) ------
+    elif input_mode == "Truth Table (Manual)":
+        num_vars_sel = st.selectbox("Number of Variables", [2, 3, 4], index=1)
+        st.markdown(f"**Enter truth table ({2**num_vars_sel} rows)**")
+        st.caption("Format each row as: `0 0 1` (inputs then output, space-separated)")
+
+        rows_input = st.text_area(
+            "Truth Table Rows",
+            height=160,
+            placeholder="\n".join(
+                " ".join(format(i, f"0{num_vars_sel}b")) + " 0"
+                for i in range(min(4, 2**num_vars_sel))
+            ) + "\n...",
+            label_visibility="collapsed",
+        )
+
+        if rows_input.strip():
+            try:
+                rows = [
+                    [int(v) for v in line.split()]
+                    for line in rows_input.strip().splitlines()
+                    if line.strip()
+                ]
+                minterms, num_vars = parse_truth_table(rows)
+                st.success(f"✓ {len(minterms)} minterms · {num_vars} variables")
+            except ValueError as e:
+                parse_error = str(e)
+
+    # ------ CSV Upload ------
+    else:
+        st.markdown("**Upload CSV truth table**")
+        st.caption("Last column = output. Columns: A, B[, C[, D]], F")
+        uploaded = st.file_uploader("CSV File", type=["csv"], label_visibility="collapsed")
+        if uploaded:
+            try:
+                minterms, num_vars = parse_csv_upload(uploaded)
+                st.success(f"✓ {len(minterms)} minterms · {num_vars} variables")
+            except ValueError as e:
+                parse_error = str(e)
+
+    # ------ Bonus options ------
+    st.divider()
+    st.markdown("**Output Options**")
+    show_pos = st.checkbox("Show POS expression", value=False)
+    show_verilog = st.checkbox("Show Verilog export", value=False)
+    show_truth_table = st.checkbox("Show truth table", value=True)
+
+    st.divider()
+    solve_btn = st.button("🚀 Solve", use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Main content
+# ---------------------------------------------------------------------------
+
+st.markdown("# 🗺️ K-Map Solver & Boolean Simplifier")
+st.markdown(
+    "Solve and visualize Karnaugh Maps interactively. "
+    "Supports 2–4 variable inputs with prime implicant groupings, "
+    "SOP/POS output, and step-by-step solution trace."
+)
+
+if parse_error:
+    st.error(f"**Input Error:** {parse_error}")
+
+elif solve_btn and minterms is not None:
+    st.divider()
+
+    # --- Run solver ---
+    with st.spinner("Solving K-Map..."):
+        prime_imps = find_prime_implicants(minterms, num_vars)
+        selected, trace = select_essential_implicants(minterms, prime_imps)
+        sop_expr = build_sop(selected, num_vars)
+
+    # --- Layout: K-Map | Results ---
+    col_kmap, col_results = st.columns([1.2, 1], gap="large")
+
+    with col_kmap:
+        st.markdown("### K-Map Visualization")
+        fig = render_kmap(minterms, num_vars, selected)
+        st.pyplot(fig, use_container_width=True)
+
+    with col_results:
+        st.markdown("### Results")
+        render_sop_display(sop_expr)
+
+        if show_pos:
+            pos_expr = build_pos(minterms, num_vars)
+            render_pos_display(pos_expr)
+
+        if show_verilog:
+            verilog_code = build_verilog(sop_expr, num_vars)
+            render_verilog_display(verilog_code)
+
+        st.markdown("#### Prime Implicants Found")
+        from solver.expression import group_to_product_term
+        for i, pi in enumerate(prime_imps):
+            term = group_to_product_term(pi, num_vars)
+            is_selected = pi in selected
+            icon = "✅" if is_selected else "⬜"
+            size_label = f"{len(pi)}-cell"
+            minterms_str = ", ".join(str(m) for m in sorted(pi))
+            st.markdown(
+                f"{icon} `{term}` — {size_label} — minterms: `{{{minterms_str}}}`"
+            )
+
+    # --- Truth Table ---
+    if show_truth_table:
+        st.divider()
+        with st.expander("📋 Truth Table", expanded=False):
+            render_truth_table(minterms, num_vars)
+
+    # --- Step-by-step trace ---
+    st.divider()
+    render_trace(trace, num_vars)
+
+elif not solve_btn:
+    # Landing state — show examples
+    st.info(
+        "👈 Enter your Boolean function in the sidebar and click **Solve** to begin.",
+        icon="💡",
+    )
+    st.markdown("### Example Inputs")
+    ex_col1, ex_col2, ex_col3 = st.columns(3)
+    with ex_col1:
+        st.markdown(
+            """
+            **2-Variable**

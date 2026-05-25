@@ -7,7 +7,6 @@ Run with:
 
 import streamlit as st
 from solver.parser import parse_minterms, parse_truth_table, parse_csv_upload
-from solver.kmap import build_grid
 from solver.implicants import find_prime_implicants, select_essential_implicants
 from solver.expression import build_sop, build_pos, build_verilog
 from ui.grid import render_kmap
@@ -15,6 +14,7 @@ from ui.components import (
     render_sop_display,
     render_pos_display,
     render_verilog_display,
+    render_output_summary,
     render_trace,
     render_truth_table,
 )
@@ -30,31 +30,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-# Catppuccin Mocha-inspired dark theme injection
-st.markdown(
-    """
-    <style>
-    .stApp { background-color: #1E1E2E; color: #CDD6F4; }
-    .stSidebar { background-color: #181825; }
-    .stButton>button {
-        background-color: #89B4FA; color: #1E1E2E;
-        border: none; border-radius: 8px;
-        font-weight: 700; padding: 0.5rem 1.5rem;
-    }
-    .stButton>button:hover { background-color: #74C7EC; }
-    .stTextInput>div>input, .stTextArea>div>textarea {
-        background-color: #313244; color: #CDD6F4;
-        border: 1px solid #585B70; border-radius: 8px;
-    }
-    .stSelectbox>div>div { background-color: #313244; color: #CDD6F4; }
-    h1, h2, h3 { color: #CDD6F4; }
-    .stTabs [data-baseweb="tab"] { color: #A6ADC8; }
-    .stTabs [aria-selected="true"] { color: #89B4FA !important; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# Minimal UI: no custom styling. Focus on functionality only.
 
 
 # ---------------------------------------------------------------------------
@@ -129,10 +105,21 @@ with st.sidebar:
             except ValueError as e:
                 parse_error = str(e)
 
-    # ------ Bonus options ------
+    # ------ Output control ------
     st.divider()
-    st.markdown("**Output Options**")
-    show_pos = st.checkbox("Show POS expression", value=False)
+    st.markdown("**Output settings**")
+    output_name = st.text_input(
+        "Output variable name",
+        value="F",
+        max_chars=1,
+        help="Set the final output name shown in the result expression.",
+    )
+    output_name = output_name.strip() or "F"
+
+    st.markdown(
+        "_The final minimized output is always shown after solving."
+    )
+    show_pos = st.checkbox("Show minimized POS expression", value=False)
     show_verilog = st.checkbox("Show Verilog export", value=False)
     show_truth_table = st.checkbox("Show truth table", value=True)
 
@@ -173,14 +160,15 @@ elif solve_btn and minterms is not None:
 
     with col_results:
         st.markdown("### Results")
-        render_sop_display(sop_expr)
+        render_output_summary(output_name, sop_expr, minterms, num_vars)
+        render_sop_display(sop_expr, output_name)
 
         if show_pos:
             pos_expr = build_pos(minterms, num_vars)
-            render_pos_display(pos_expr)
+            render_pos_display(pos_expr, output_name)
 
         if show_verilog:
-            verilog_code = build_verilog(sop_expr, num_vars)
+            verilog_code = build_verilog(sop_expr, num_vars, output_name)
             render_verilog_display(verilog_code)
 
         st.markdown("#### Prime Implicants Found")
@@ -217,3 +205,24 @@ elif not solve_btn:
         st.markdown(
             """
             **2-Variable**
+            m(0, 3)
+            Expected: `F = A'B' + AB`
+            """
+        )
+    with ex_col2:
+        st.markdown(
+            """
+            **3-Variable**
+        m(0, 1, 2, 4, 5, 6)
+        Expected: `F = A'B' + AB' + B'C'` (etc.)
+            """
+        )
+    with ex_col3:
+        st.markdown(
+            """
+            **4-Variable**
+            m(0, 1, 2, 3, 8, 9, 10, 11)
+            Expected: `F = A'B + AB'` or similar
+            """
+        )
+        
